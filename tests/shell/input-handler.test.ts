@@ -17,11 +17,13 @@ interface Harness {
   bus: InstanceType<typeof EventBus>;
   submitted: string[];
   commands: { name: string; args: string }[];
+  ptyWrites: string[];
 }
 
 function makeHarness(): Harness {
   const bus = new EventBus();
   const handlerMap = new Map<string, (...a: unknown[]) => unknown>();
+  const ptyWrites: string[] = [];
   const surface = {
     write: () => {},
     writeLine: () => {},
@@ -34,7 +36,7 @@ function makeHarness(): Harness {
       isForegroundBusy: () => false,
       getCwd: () => "/tmp",
       isAgentActive: () => false,
-      writeToPty: () => {},
+      writeToPty: (data: string) => { ptyWrites.push(data); },
       onCommandEntered: () => {},
       redrawPrompt: () => {},
       freshPrompt: () => {},
@@ -61,7 +63,7 @@ function makeHarness(): Harness {
     onSubmit(query, b) { b.emit("agent:submit", { query }); },
     returnToSelf: true,
   });
-  return { handler, bus, submitted, commands };
+  return { handler, bus, submitted, commands, ptyWrites };
 }
 
 test.afterEach(() => {
@@ -147,4 +149,29 @@ test("legacy unescaped history lines load as-is", () => {
   h2.handler.handleInput("\x1b[A");
   h2.handler.handleInput("\r");
   assert.deepEqual(h2.submitted, ["plain old entry"]);
+});
+
+test("entering an agent mode erases the mirrored trigger from the shell line", () => {
+  // The raw path mirrors every keystroke to the pty, so '>' lands in the
+  // shell's command line before mode detection. Without an erase, a later
+  // newline makes fish execute it (phantom commands: bare '>' = parse
+  // error, '#' = silent comment, "'x'" = builtin test with exit 1).
+  const h = makeHarness();
+  h.handler.handleInput(">");
+  assert.ok(h.ptyWrites.includes("\x15"), "Ctrl-U must be sent to clear the shell's line");
+});
+
+test("a full agent-mode exchange leaves no unexecuted text in the pty", () => {
+  // Whatever bytes reach the pty during a mode session, the LAST one must be
+  // a submit (CR) or a line erase (Ctrl-U): an unterminated token like a
+  // bare quote would otherwise sit on fish's line and run as garbage when
+  // the next real command's Enter arrives.
+  const h = makeHarness();
+  h.handler.handleInput(">");            // enter mode (mirrored '>' must be erased)
+  for (const ch of "hello") h.handler.handleInput(ch);
+  h.handler.handleInput("\r");           // submit to the agent, not the shell
+  assert.deepEqual(h.submitted, ["hello"]);
+  const last = h.ptyWrites.at(-1);
+  assert.ok(last === "\r" || last === "\n" || last === "\x15",
+    `last pty write must terminate or clear the shell line, got ${JSON.stringify(last)}`);
 });

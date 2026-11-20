@@ -220,6 +220,12 @@ export class InputHandler {
     this.activeMode = mode;
     this.editor.clear();
     this.view.enableModeKeys();
+    // The trigger keystroke reached the pty before mode detection (the raw
+    // path mirrors every char), so the shell now holds a bare quote/comment
+    // on its line — fish would execute it as a phantom command when a
+    // newline later reaches the pty. Clear its line first: Ctrl-U (\x15)
+    // erases whatever is pending without submitting, for bash/zsh/fish.
+    this.ctx.writeToPty("\x15");
     this.drawPrompt(false);
   }
 
