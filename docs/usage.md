@@ -298,6 +298,51 @@ If neither level declares a `contextWindow`, agent-sh falls back to a conservati
 
 Switching mid-conversation preserves your conversation state — only the LLM endpoint changes.
 
+### Agent modes: different triggers, different models
+
+The default `>` mode uses the current model. Add more activation characters in
+`settings.json`, each with its own provider/model and optional read-only mode:
+
+```json
+{
+  "agentModes": {
+    ">": {},
+    "\"": { "provider": "zai-coding-plan", "model": "glm-4.7" },
+    "'": { "provider": "deepseek", "model": "deepseek-v4-flash" },
+    "?": { "provider": "deepseek", "model": "deepseek-v4-flash", "readOnly": true }
+  }
+}
+```
+
+With that file, `" explain this` uses GLM, `' why is CI red` uses DeepSeek,
+and `? why did the service fail` runs read-only. To make the default prompt
+read-only instead of adding `?`, use `">": { "readOnly": true }`. `>` remains available unless
+you disable it with `">": false`; an omitted `agentModes` is exactly the old
+single `>` mode. Modes without `provider`/`model` keep the currently active
+model, so include both if you want a trigger to switch back.
+
+Model selection for a trigger is session-only: it does not overwrite
+`defaultProvider` or the provider's `defaultModel` (unlike `/model`). The
+conversation itself is shared across modes.
+
+`readOnly: true` gives the run no write access:
+
+- `write_file` and `edit_file` are not offered. The agent inspects with
+  `read_file`, `grep`, `glob`, `ls`, and — when an OS sandbox is available —
+  shell commands.
+- On Linux, shell commands run under **bubblewrap** with the host filesystem
+  mounted read-only and a private `/tmp`. The Nix package puts `bubblewrap` on
+  PATH; for npm installs, install it yourself (`bubblewrap` / `bwrap`) and make
+  sure unprivileged user namespaces work. If it cannot start, shell tools are
+  hidden rather than running without confinement.
+- The agent gets a `suggest_command` tool. When a fix needs a write (restart a
+  service, edit a config, install a package), it explains and stages one shell
+  command at your prompt. Review it and press Enter to run it yourself.
+
+The optional `promptIcon`, `indicator`, and `label` fields customize the mode's
+prompt; they default to the trigger character, `●` (`○` for read-only), and
+`agent <trigger>`.
+
 ### CLI Flags
 
 | Flag | Environment Variable | Description |
@@ -306,7 +351,7 @@ Switching mid-conversation preserves your conversation state — only the LLM en
 | `--model <name>` | — | Model name (overrides provider default) |
 | `--api-key <key>` | `OPENAI_API_KEY` | API key for OpenAI-compatible API |
 | `--base-url <url>` | `OPENAI_BASE_URL` | Base URL for API endpoint |
-| `--shell <path>` | `SHELL` | Shell to use (default: `/bin/bash`) |
+| `--shell <path>` | `SHELL` | Shell to use. Defaults to the shell agent-sh was launched from (bash, zsh, or fish), then `$SHELL`, then `/bin/bash`. |
 | `--backend <name>` | — | Agent backend to launch (e.g. `ash`, `pi`); per-session override of `settings.defaultBackend`, does not persist. Errors out if the named backend isn't registered. |
 | `-e, --extensions` | — | Extensions to load (comma-separated, repeatable) |
 | `-p, --print [prompt]` | — | Run one prompt headless and exit; see [Headless mode](#headless-mode) |
@@ -335,6 +380,7 @@ Switching mid-conversation preserves your conversation state — only the LLM en
 | `diagnose` | `false` | Enable the `diagnose` tool — lets the agent evaluate JS expressions against its own runtime state (introspection; agent already has bash, so this is convenience, not new capability) |
 | `startupBanner` | `true` | Show the startup banner (backend / model / extensions / skills) on launch |
 | `promptIndicator` | `true` | Show a subtle agent-sh indicator in the shell prompt |
+| `agentModes` | `{ ">": {} }` | Activation characters mapped to per-mode provider/model and `readOnly`; see [Agent modes](#agent-modes-different-triggers-different-models). |
 | `toolMode` | `"api"` | How tools are presented to the LLM. `"api"` sends all tool schemas. `"deferred"` bundles extension tools behind a `use_extension(name, args)` meta-tool (saves prompt tokens, loses schema fidelity). `"deferred-lookup"` keeps extension schemas dormant until the model calls `load_tool(names[])` — loaded tools then become first-class on the next turn with full schemas. `"inline"` describes tools as text. |
 | `disabledExtensions` | `[]` | Names of user extensions in `~/.agent-sh/extensions/` to skip when auto-discovering. Match by basename without extension for files (`"peer-mesh"` matches `peer-mesh.ts`) or by directory name for dir-style extensions (`"superash"` matches `superash/index.ts`). Avoids having to rename files to `.disabled`. |
 | `disabledBuiltins` | `[]` | Names of built-in extensions to disable. |

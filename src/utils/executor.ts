@@ -181,6 +181,8 @@ export function executeArgv(opts: {
   timeout?: number;
   maxOutputBytes?: number;
   onOutput?: (chunk: string) => void;
+  /** Own process group on Unix so killSession can reach the whole tree. */
+  detached?: boolean;
 }): { session: ExecutorSession; done: Promise<void> } {
   const timeout = opts.timeout ?? DEFAULT_TIMEOUT;
   const maxOutput = opts.maxOutputBytes ?? DEFAULT_MAX_OUTPUT;
@@ -212,6 +214,7 @@ export function executeArgv(opts: {
       stdio: ["ignore", "pipe", "pipe"],
       cwd: opts.cwd,
       env,
+      detached: opts.detached ?? false,
     });
   } catch (err) {
     session.exitCode = -1;

@@ -71,6 +71,7 @@ test("bash strategy writes a .bashrc that sources the user's bashrc and installs
     const rc = fs.readFileSync(path.join(cfg.tmpDir!, ".bashrc"), "utf8");
 
     assert.match(rc, /source "\/home\/test\/\.bashrc"/);
+    assert.match(rc, /unset BASH_EXECUTION_STRING/);
     assert.match(rc, /\\e\]9999;id=deadbeef;PROMPT\\a/);
     assert.match(rc, /\\e\]9997;id=deadbeef;%s\\a/);
     assert.match(rc, /\\e\]9998;id=deadbeef;READY\\a/);
@@ -89,7 +90,20 @@ test("bash strategy spawn args use --rcfile pointing at the tmp .bashrc", () => 
   try {
     assert.equal(cfg.args[0], "--rcfile");
     assert.equal(cfg.args[1], path.join(cfg.tmpDir!, ".bashrc"));
-    assert.deepEqual(cfg.envOverrides, {});
+    assert.deepEqual(cfg.envOverrides, { BASH_EXECUTION_STRING: "agent-sh" });
+  } finally {
+    cleanup(cfg.tmpDir);
+    cleanup(opts.tmpDirRoot);
+  }
+});
+
+test("bash strategy preserves an inherited BASH_EXECUTION_STRING after the user's rc loads", () => {
+  const opts = makeOpts({ env: { HOME: "/home/test", BASH_EXECUTION_STRING: "outer script" } });
+  const cfg = bashStrategy.prepareSpawn(opts);
+  try {
+    const rc = fs.readFileSync(path.join(cfg.tmpDir!, ".bashrc"), "utf8");
+    assert.match(rc, /BASH_EXECUTION_STRING='outer script'/);
+    assert.equal(cfg.envOverrides.BASH_EXECUTION_STRING, "outer script");
   } finally {
     cleanup(cfg.tmpDir);
     cleanup(opts.tmpDirRoot);

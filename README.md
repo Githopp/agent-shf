@@ -19,6 +19,8 @@ The frontend bundled with agent-sh: a normal shell on top of node-pty — your r
 ~ $ > draft a commit message     # agent reads your diff and shell history
 ```
 
+Add more activation characters in `settings.json` (`agentModes`) — for example `"` for GLM, `'` for DeepSeek, or a `?` mode with `readOnly: true` that cannot modify files and stages proposed commands at your prompt instead.
+
 **The agent behind `>` is swappable — the terminal stays the same.** Out of the box it's **`ash`**, agent-sh's own lightweight agent: it works with any OpenAI-compatible API and shares its tool surface with every extension you install. Already invested in another coding agent? The same `>` and the same shell-context wiring can host **pi**, **claude-code**, or **opencode** instead through in-the-box bridges — bring your own backend, keep the workflow. The Quick Start below walks through both.
 
 ## Quick Start

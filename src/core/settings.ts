@@ -36,6 +36,29 @@ export interface ModelCapabilityConfig {
   reasoningLevels?: string[];
 }
 
+/** One agent activation trigger (the character typed at an empty prompt). */
+export interface AgentModeConfig {
+  /** Human-readable name; defaults to "agent" for `>` and `agent <trigger>` otherwise. */
+  label?: string;
+  /** Prompt icon shown while typing; defaults to the trigger itself (`❯` for `>`). */
+  promptIcon?: string;
+  /** Status indicator shown before the icon; defaults to `●`. */
+  indicator?: string;
+  /** Provider to select before submitting this mode's query. */
+  provider?: string;
+  /** Model to select before submitting this mode's query. */
+  model?: string;
+  /**
+   * Read-only mode: file-writing tools are unavailable, shell commands run in
+   * an OS read-only filesystem sandbox where possible, and the agent stages
+   * proposed commands at the shell prompt instead of running them.
+   */
+  readOnly?: boolean;
+}
+
+/** A mode entry may be `false` to disable an inherited default (notably `>`). */
+export type AgentModeSetting = AgentModeConfig | boolean;
+
 /** Provider profile — a named LLM configuration. */
 export interface ProviderConfig {
   /** API key (supports $ENV_VAR syntax for runtime expansion). */
@@ -144,6 +167,12 @@ export interface Settings {
   startupBanner?: boolean;
   /** Show a subtle agent-sh indicator in the shell prompt. */
   promptIndicator?: boolean;
+  /**
+   * Agent activation triggers, keyed by the character typed at an empty
+   * prompt. Omitted -> `{ ">": {} }`. If a map is given, `>` stays available
+   * unless it is set to `false`.
+   */
+  agentModes?: Record<string, AgentModeSetting>;
 
   // ── Built-in extensions ──────────────────────────────────
   /** Names of built-in extensions to disable (e.g. ["command-suggest"]). */
@@ -184,6 +213,7 @@ const DEFAULTS: Required<Settings> = {
   diagnose: false,
   startupBanner: true,
   promptIndicator: true,
+  agentModes: { ">": {} } as Record<string, AgentModeSetting>,
   disabledBuiltins: [],
   disabledExtensions: [],
 };

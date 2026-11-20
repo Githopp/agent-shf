@@ -8,6 +8,28 @@ Releases before this file are recorded in the git tags and GitHub releases.
 
 ## [Unreleased]
 
+### Added
+
+- `agentModes` in `settings.json`: extra agent activation characters (`'`,
+  `"`, `?`, …), each with an optional `provider`/`model` selection and
+  `readOnly` mode. Mode model switches are session-only, unlike `/model`.
+- Read-only agent runs. File-writing tools are hidden, shell commands run in a
+  bubblewrap filesystem sandbox where available (otherwise shell tools are
+  hidden), and the agent gets `suggest_command` so it can stage one command at
+  the user's prompt for review before pressing Enter. The Nix package now puts
+  `bubblewrap` on `PATH`.
+- Commands staged by the agent are typed into the next shell prompt via
+  `shell:queue-command`, so a pending input mode is cleared first.
+
+### Fixed
+
+- Interactive launches prefer the actual parent shell (bash/zsh/fish) over a
+  stale `$SHELL`, so launching from fish no longer starts a bash session on
+  systems where `SHELL` still says bash.
+- Bash sessions on NixOS are no longer replaced by fish when `/etc/bashrc`
+  loads: the guard variable is set in the child environment before `--rcfile`
+  runs, then removed after the user's config has loaded.
+
 ## [0.17.0] - 2026-11-05
 
 ### Added

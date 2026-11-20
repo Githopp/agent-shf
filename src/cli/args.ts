@@ -68,6 +68,8 @@ export interface CliConfig extends AppConfig {
   print?: string;
   output?: "text" | "json";
   noStdin?: boolean;
+  /** True when --shell was passed explicitly (not just the $SHELL default). */
+  shellExplicit?: boolean;
 }
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): CliConfig {
@@ -76,6 +78,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   let provider: string | undefined;
   let backend: string | undefined;
   let shell = env.SHELL || "/bin/bash";
+  let shellExplicit = false;
 
   let apiKey: string | undefined;
   let baseURL: string | undefined;
@@ -97,6 +100,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
       backend = argv[++i]!;
     } else if (arg === "--shell" && argv[i + 1]) {
       shell = argv[++i]!;
+      shellExplicit = true;
     } else if ((arg === "--extensions" || arg === "-e") && argv[i + 1]) {
       const exts = argv[++i]!.split(",").map((s) => s.trim());
       extensions = extensions ? [...extensions, ...exts] : exts;
@@ -123,5 +127,5 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     }
   }
 
-  return { shell, model, extensions, apiKey, baseURL, provider, backend, print, output, noStdin };
+  return { shell, shellExplicit, model, extensions, apiKey, baseURL, provider, backend, print, output, noStdin };
 }

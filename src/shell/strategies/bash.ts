@@ -7,6 +7,8 @@ import type { ShellStrategy, PrepareSpawnOpts, ShellSpawnConfig } from "./types.
 const OSC7_CMD = 'printf "\\e]7;file://%s%s\\a" "$HOSTNAME" "$PWD"';
 const TITLE_CMD = 'printf "\\e]0;⚡ agent-sh: %s\\a" "${PWD/#$HOME/~}"';
 
+const shQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`;
+
 export const bashStrategy: ShellStrategy = {
   name: "bash",
 
@@ -22,9 +24,17 @@ export const bashStrategy: ShellStrategy = {
     const tmpDir = fs.mkdtempSync(path.join(tmpDirRoot, "agent-sh-"));
     const home = env.HOME || userHome;
     const promptMarker = `printf "\\e]9999;${instanceTag};PROMPT\\a"`;
+    const originalExecutionString = env.BASH_EXECUTION_STRING;
+    const keepExecutionString = Boolean(originalExecutionString);
 
+    // NixOS's /etc/bashrc starts fish from an interactive bash whose parent
+    // isn't fish. It is read before --rcfile, so the marker must be in the
+    // child's environment; remove it again once the user's config is loaded.
     const lines = [
       `[ -f "${home}/.bashrc" ] && source "${home}/.bashrc"`,
+      keepExecutionString
+        ? `BASH_EXECUTION_STRING=${shQuote(originalExecutionString!)}`
+        : "unset BASH_EXECUTION_STRING",
       "",
       "# agent-sh hooks (invisible OSC sequences for cwd + prompt detection)",
       "# Wrapped in a function because inlining printf \"...\" into",
@@ -78,7 +88,9 @@ export const bashStrategy: ShellStrategy = {
 
     return {
       args: ["--rcfile", rcPath],
-      envOverrides: {},
+      envOverrides: {
+        BASH_EXECUTION_STRING: keepExecutionString ? originalExecutionString! : "agent-sh",
+      },
       tmpDir,
     };
   },

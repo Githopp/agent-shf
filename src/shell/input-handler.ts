@@ -237,6 +237,11 @@ export class InputHandler {
     this.ctx.redrawPrompt();
   }
 
+  /** Drop a pending return-to-mode request (e.g. when staging a command). */
+  cancelPendingReturnMode(): void {
+    this.pendingReturnMode = null;
+  }
+
   /** Called when agent processing completes. Returns true if the input
    *  handler re-entered a mode (so caller should skip shell prompt). */
   handleProcessingDone(): boolean {

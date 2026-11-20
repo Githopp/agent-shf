@@ -294,7 +294,7 @@ A backend listens for input events and emits output events. The TUI and all exte
 
 | Event | Payload | Description |
 |---|---|---|
-| `agent:submit` | `{ query }` | User submitted a query |
+| `agent:submit` | `{ query, images?, readOnly? }` | User submitted a query. `readOnly` restricts the run to non-mutating tools and, where available, an OS read-only shell sandbox |
 | `agent:steer` | `{ text, images?, id? }` | Message for the turn already running — injected before its next set of tool calls. Falls back to `agent:submit` when idle. Re-sending a pending `id` edits that message in place. Backends that can't inject mid-turn may treat it as a queued query |
 | `agent:steer-cancel` | `{ id? }` | Drop the pending steering message with this `id`, or the most recent one when `id` is omitted |
 | `agent:cancel-request` | `{ silent? }` | User requested cancellation |
@@ -443,6 +443,7 @@ None of the bridges bundle PTY tools. If you want the external agent to observe 
 - **`terminal_read`** — calls `ctx.call("terminal-buffer").readScreen()` and returns the text + cursor + alt-screen state
 - **`terminal_keys`** — emits `shell:pty-write` to send keystrokes to the PTY
 - **`user_shell`** — emits `shell:exec-request` and awaits the result, for `cd`/`export`/`source`-level state mutation
+- **`command-suggest`** — registers `suggest_command`, which emits `shell:queue-command` so the command is typed into the next shell prompt for review
 
 For pi, this is a standalone extension that registers with pi's `customTools` (via `ctx.call` or a pi-specific hook). For Claude Code, the SDK accepts MCP servers in `query()` options — so the companion extension builds the MCP server and either forks the bridge or coordinates with it via a handler to attach the server.
 

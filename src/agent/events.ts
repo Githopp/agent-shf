@@ -35,7 +35,7 @@ declare module "../core/event-bus.js" {
     "agent:instructions": { instructions: Array<{ name: string; text: string }> };
     "agent:skills": { skills: Array<{ name: string; description: string; filePath: string }> };
 
-    "agent:submit": { query: string; images?: ImageContent[] };
+    "agent:submit": { query: string; images?: ImageContent[]; readOnly?: boolean };
     "agent:cancel-request": { silent?: boolean };
     "agent:append-user-message": { text: string };
     // Optional id: re-steer with a pending id edits it; cancel by id removes it.
@@ -146,7 +146,7 @@ declare module "../core/event-bus.js" {
       stats?: { before: number; after: number; evictedCount: number };
     };
 
-    "config:switch-model": { id: string; provider: string };
+    "config:switch-model": { id: string; provider: string; persist?: boolean };
     "config:get-models": { models: Model[]; active: Model | null };
     "config:set-thinking": { level: string };
     "config:get-thinking": { level: string; levels: string[]; supported: boolean };

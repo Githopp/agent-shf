@@ -90,6 +90,8 @@ export interface ToolExecutionContext {
   ui?: ToolUI;
   /** Aborted on Ctrl-C — tools with subprocess work should listen and clean up. */
   signal?: AbortSignal;
+  /** This run has no write access (see AgentRunOptions.readOnly). */
+  readOnly?: boolean;
 }
 
 /** LLM-facing view of a tool — what `adviseToolSchema` advisors return. */

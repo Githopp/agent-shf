@@ -5,6 +5,7 @@
   makeWrapper,
   nodejs_22,
   bash,
+  bubblewrap,
   ripgrep,
   src,
 }:
@@ -70,11 +71,12 @@ buildNpmPackage {
   nativeBuildInputs = [ makeWrapper ];
 
   # runtime PATH: rg for the grep/glob tools, bash for the bash tool
-  # (findBash() probes canonical locations, then PATH), node for the CLI
-  # itself in case npm left the `env node` shebang in place.
+  # (findBash() probes canonical locations, then PATH), bubblewrap for
+  # read-only agent modes, node for the CLI itself in case npm left the
+  # `env node` shebang in place.
   postFixup = ''
     wrapProgram "$out/bin/agent-sh" \
-      --prefix PATH : "${lib.makeBinPath [ ripgrep bash nodejs_22 ]}"
+      --prefix PATH : "${lib.makeBinPath [ ripgrep bash bubblewrap nodejs_22 ]}"
   '';
 
   meta = with lib; {

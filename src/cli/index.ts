@@ -9,7 +9,10 @@ import { dispatchSubcommand } from "./subcommands.js";
 import { anyProviderConfigured, KNOWN_PROVIDERS } from "./auth/keys.js";
 import { clearOpost } from "../utils/tty.js";
 import { parseArgs } from "./args.js";
+import { resolveShellPath } from "./shell-detect.js";
 import { captureShellEnvAsync, mergeShellEnv } from "./shell-env.js";
+import { registerAgentModes, resolveAgentModes } from "../shell/agent-modes.js";
+import { activateCommandSuggest } from "../extensions/command-suggest.js";
 import { loadAllExtensions, requireBackends } from "./boot.js";
 import { runHeadless } from "./headless.js";
 import { parseRunArgs, runFile } from "./run.js";
@@ -55,7 +58,11 @@ async function main(): Promise<void> {
     if (v !== undefined) baseEnv[k] = v;
   }
 
-  const shellPath = config.shell || process.env.SHELL || "/bin/bash";
+  const shellPath = resolveShellPath({
+    configured: config.shell,
+    explicit: config.shellExplicit,
+    interactive: !headless,
+  });
   try {
     const shellEnv = await captureShellEnvAsync(shellPath);
     if (Object.keys(shellEnv).length > 0) {
@@ -142,7 +149,9 @@ async function main(): Promise<void> {
 
   // Load before spawning the shell so PS1 lands below the banner.
   const settings = getSettings();
+  const agentModes = resolveAgentModes(settings);
   await loadAllExtensions(extCtx, config.extensions);
+  if (agentModes.some((mode) => mode.readOnly)) activateCommandSuggest(extCtx);
   const backendNames = requireBackends(core, config.backend);
 
   if (settings.startupBanner !== false) {
@@ -168,7 +177,8 @@ async function main(): Promise<void> {
       }
     }
 
-    const hint = `${p.muted}Type ${p.warning}>${p.muted} to ask AI · ${p.warning}>/help${p.muted} for commands${p.reset}`;
+    const triggers = agentModes.map((mode) => mode.trigger).join(" ") || ">";
+    const hint = `${p.muted}Type ${p.warning}${triggers}${p.muted} to ask AI · ${p.warning}>/help${p.muted} for commands${p.reset}`;
     const borderLine = `${p.muted}${"─".repeat(bannerW)}${p.reset}`;
 
     process.stdout.write(
@@ -188,7 +198,7 @@ async function main(): Promise<void> {
   shell = activateShell(extCtx, {
     cols,
     rows,
-    shellPath: config.shell || process.env.SHELL || "/bin/bash",
+    shellPath,
     cwd: process.cwd(),
     onShowAgentInfo: () => {
       if (agentInfo) {
@@ -199,17 +209,7 @@ async function main(): Promise<void> {
   });
   bus.off("ui:error", bootUiError);
 
-  bus.emit("input-mode:register", {
-    id: "agent",
-    trigger: ">",
-    label: "agent",
-    promptIcon: "❯",
-    indicator: "●",
-    onSubmit(query, b) {
-      b.emit("agent:submit", { query });
-    },
-    returnToSelf: true,
-  });
+  registerAgentModes(bus, agentModes);
 
   // ── Terminal lifecycle ────────────────────────────────────────
   process.on("SIGTERM", cleanup);

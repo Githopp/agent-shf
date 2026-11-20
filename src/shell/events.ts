@@ -19,6 +19,8 @@ declare module "../core/event-bus.js" {
 
     "shell:pty-data": { raw: string };
     "shell:pty-write": { data: string };
+    /** Stage a command at the next shell prompt (empty clears it). */
+    "shell:queue-command": { command: string };
     "shell:pty-resize": { cols: number; rows: number };
 
     "shell:host-write": { data: string };

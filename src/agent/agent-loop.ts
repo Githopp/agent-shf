@@ -28,6 +28,7 @@ import { createToolProtocol, type ToolProtocol, type PendingToolCall as Protocol
 
 import { discoverGlobalSkills, discoverProjectSkills } from "./skills.js";
 import type { FileReadCache } from "./tools/read-file.js";
+import { getReadOnlySandbox } from "./read-only-sandbox.js";
 import { DEFAULT_REASONING_LEVELS, REASONING_LEVELS, effectiveReasoningLevel } from "../core/reasoning-levels.js";
 
 type PendingToolCall = ProtocolPendingToolCall;
@@ -228,8 +229,8 @@ export class AgentLoop implements AgentBackend {
     });
 
 
-    on("agent:submit", ({ query, images }) => {
-      this.submitLegacy(query, images).catch(() => {});
+    on("agent:submit", ({ query, images, readOnly }) => {
+      this.submitLegacy(query, images, readOnly).catch(() => {});
     });
     on("agent:cancel-request", (e) => {
       this.abortController?.abort(e.silent ? "silent" : undefined);
@@ -255,10 +256,13 @@ export class AgentLoop implements AgentBackend {
       this.conversation.appendUserMessage(text);
       this.bus.emit("conversation:message-appended", { role: "user", content: text });
     });
-    on("config:switch-model", ({ id, provider }) => {
+    on("config:switch-model", ({ id, provider, persist = true }) => {
       const found = this.pullModels().find((m) => m.id === id && m.provider === provider);
       if (!found) {
         this.bus.emit("ui:error", { message: `Unknown model: ${provider}:${id}` });
+        return;
+      }
+      if (this.activeModel.id === found.id && this.activeModel.provider === found.provider && this.activeEndpoint) {
         return;
       }
       this.activeModel = found;
@@ -270,15 +274,17 @@ export class AgentLoop implements AgentBackend {
       }
       this.emitIdentity();
 
-      // Persist as the new default — selection survives restart. Safe even for
-      // dynamic providers: agent-backend defers model resolution to
-      // core:extensions-loaded, so the extension re-registers before the
-      // persisted default is looked up.
-      const saved = this.updateSettings({
-        defaultProvider: found.provider,
-        providers: { [found.provider]: { defaultModel: found.id } },
-      });
-      this.bus.emit("ui:info", { message: `Model: ${found.provider}: ${found.id} (${saved ? "saved as default" : "this session only; settings not saved"})` });
+      if (persist) {
+        // Persist as the new default — selection survives restart. Safe even for
+        // dynamic providers: agent-backend defers model resolution to
+        // core:extensions-loaded, so the extension re-registers before the
+        // persisted default is looked up.
+        const saved = this.updateSettings({
+          defaultProvider: found.provider,
+          providers: { [found.provider]: { defaultModel: found.id } },
+        });
+        this.bus.emit("ui:info", { message: `Model: ${found.provider}: ${found.id} (${saved ? "saved as default" : "this session only; settings not saved"})` });
+      }
       this.bus.emit("config:changed", {});
     });
     on("agent:models-changed", () => {
@@ -446,6 +452,38 @@ export class AgentLoop implements AgentBackend {
     return this.getTools().find((t) => t.name === name);
   }
 
+  private readOnlyRun(): boolean {
+    return this.runState?.options.readOnly === true;
+  }
+
+  /** In a read-only run, mutating tools are hidden; shell tools are hidden too
+   *  when no OS sandbox is available to enforce the restriction. */
+  private readOnlyBlocked(tool: ToolDefinition): boolean {
+    if (!this.readOnlyRun()) return false;
+    // Child agents/workflows don't inherit this run's read-only policy yet, so
+    // delegation tools would otherwise be a write escape hatch. terminal_keys
+    // can type into the user's live shell, which is equivalent.
+    if (tool.name === "spawn_agent" || tool.name === "run_workflow" || tool.name === "terminal_keys") return true;
+    if (tool.name === "bash" || tool.name === "pwsh") return !getReadOnlySandbox();
+    return tool.modifiesFiles === true;
+  }
+
+  private readOnlyInstructions(): string {
+    const shellBlocked = !getReadOnlySandbox();
+    const canSuggest = !!this.findTool("suggest_command");
+    const lines = [
+      "# Read-only mode",
+      "This run has no write access. Do not attempt to modify files, configuration, packages, services, or git state.",
+      shellBlocked
+        ? "Shell commands are unavailable because no OS read-only sandbox (bubblewrap) could be started. Use the read-only file tools (ls, read_file, grep, glob) for inspection."
+        : "Shell commands run in an OS read-only filesystem sandbox: you can inspect logs and state (journalctl, systemctl status, ps, tail, cat, grep, …), but writes outside a private /tmp fail.",
+      canSuggest
+        ? "When the user's goal requires a change, explain briefly and call suggest_command with one command. It is placed at their shell prompt, where they can review it and press Enter."
+        : "When the user's goal requires a change, explain it and give them the exact command to run themselves.",
+    ];
+    return lines.join("\n");
+  }
+
   // ── Extension instructions, skills & tool tracking ──────────────────
 
   /** Instructions keyed by name, with extension attribution. */
@@ -550,7 +588,7 @@ export class AgentLoop implements AgentBackend {
     return promise;
   }
 
-  private async submitLegacy(query: string, images?: ImageContent[]): Promise<void> {
+  private async submitLegacy(query: string, images?: ImageContent[], readOnly?: boolean): Promise<void> {
     const submission = ++this.legacySubmission;
     const previous = this.activeRun;
     if (previous) {
@@ -558,7 +596,7 @@ export class AgentLoop implements AgentBackend {
       await previous;
       if (submission !== this.legacySubmission || this.disposed) return;
     }
-    await this.startRun(query, { images }, true);
+    await this.startRun(query, { images, readOnly }, true);
   }
 
   private wireHistory(): AgentSnapshot["messages"] {
@@ -1030,9 +1068,19 @@ export class AgentLoop implements AgentBackend {
         return { content: msg, exitCode: 1, isError: true };
       }
 
+      if (this.readOnlyBlocked(tool)) {
+        const content = `Read-only mode: ${name} is unavailable because this run has no write access. ` +
+          "Inspect with read-only tools, and use suggest_command for changes the user should run.";
+        if (telemetry) this.bus.emit("agent:tool-call", { tool: name, args });
+        return { content, exitCode: 1, isError: true };
+      }
+
       const display = tool.getDisplayInfo?.(args) ?? { kind: "execute" as const };
       let onChunk: ((chunk: string) => void) | undefined;
-      let toolCtx: ToolExecutionContext = { signal };
+      let toolCtx: ToolExecutionContext = {
+        signal,
+        ...(this.readOnlyRun() ? { readOnly: true } : {}),
+      };
       if (telemetry) {
         const label = tool.displayName ?? name;
         this.bus.emit("agent:tool-started", {
@@ -1049,7 +1097,11 @@ export class AgentLoop implements AgentBackend {
         // Use ctx.onChunk so advisors can wrap the streaming callback.
         onChunk = tool.showOutput !== false ? ctx.onChunk : undefined;
         if (this.compositor) {
-          toolCtx = { signal, ui: createToolUI(this.bus, this.compositor.surface("agent")) };
+          toolCtx = {
+            signal,
+            ...(this.readOnlyRun() ? { readOnly: true } : {}),
+            ui: createToolUI(this.bus, this.compositor.surface("agent")),
+          };
         }
       }
       let result: Awaited<ReturnType<typeof tool.execute>>;
@@ -1265,7 +1317,10 @@ export class AgentLoop implements AgentBackend {
         lastCwd = currentCwd;
       }
 
-      const systemPrompt = options.systemPrompt ?? (cachedSystemPrompt ?? (cachedSystemPrompt = this.handlers.call("system-prompt:build") as string));
+      const baseSystemPrompt = options.systemPrompt ?? (cachedSystemPrompt ?? (cachedSystemPrompt = this.handlers.call("system-prompt:build") as string));
+      const systemPrompt = options.readOnly
+        ? `${baseSystemPrompt}\n\n${this.readOnlyInstructions()}`
+        : baseSystemPrompt;
       const dc = options.dynamicContext;
       const dynamicContext = (typeof dc === "function" ? dc() : dc) ?? this.handlers.call("dynamic-context:build") as string;
 
@@ -1342,7 +1397,7 @@ export class AgentLoop implements AgentBackend {
 
         const tool = this.findTool(tc.name);
         if (!tool) {
-          const available = this.getTools().map((t) => t.name).join(", ");
+          const available = this.getTools().filter((t) => !this.readOnlyBlocked(t)).map((t) => t.name).join(", ");
           collectedResults.push({
             callId: tc.id, toolName: tc.name,
             content: `Unknown tool "${tc.name}". Available tools: ${available}`,
@@ -1698,7 +1753,8 @@ export class AgentLoop implements AgentBackend {
     // Tool protocol controls what goes in the API tools param vs dynamic context.
     // agent:tools:visible is a filter point on the assembled list — distinct from
     // getTools(), which other code (e.g. tool bridges) needs unfiltered.
-    const toolView = this.bus.emitPipe("agent:tools:visible", { tools: this.getTools() }).tools;
+    const assembledTools = this.bus.emitPipe("agent:tools:visible", { tools: this.getTools() }).tools;
+    const toolView = assembledTools.filter((tool) => !this.readOnlyBlocked(tool));
     const apiTools = this.toolProtocol.getApiTools(toolView);
     const toolPrompt = this.toolProtocol.getToolPrompt(toolView);
 

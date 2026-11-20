@@ -1,6 +1,7 @@
-import { executeCommand, killSession } from "../../utils/executor.js";
+import { executeArgv, executeCommand, findBash, killSession } from "../../utils/executor.js";
 import type { EventBus } from "../../core/event-bus.js";
 import type { ToolDefinition } from "../types.js";
+import { bubblewrapReadOnlyArgs, getReadOnlySandbox } from "../read-only-sandbox.js";
 
 export function createBashTool(opts: {
   getCwd: () => string;
@@ -67,13 +68,36 @@ export function createBashTool(opts: {
         };
       }
 
-      const { session, done } = executeCommand({
-        command,
-        cwd: opts.getCwd(),
-        env: opts.getEnv(),
-        timeout,
-        onOutput: onChunk,
-      });
+      const cwd = opts.getCwd();
+      const readOnly = ctx?.readOnly === true;
+      const sandbox = readOnly ? getReadOnlySandbox() : null;
+      if (readOnly && !sandbox) {
+        return {
+          content: "Read-only mode: no OS read-only sandbox (bubblewrap) is available, so shell commands are disabled.",
+          exitCode: 1,
+          isError: true,
+        };
+      }
+
+      const { session, done } = sandbox
+        ? executeArgv({
+            file: sandbox.file,
+            args: bubblewrapReadOnlyArgs(command, cwd, findBash() ?? "/bin/sh"),
+            cwd,
+            env: opts.getEnv(),
+            timeout,
+            onOutput: onChunk,
+            detached: process.platform !== "win32",
+          })
+        : executeCommand({
+            command,
+            cwd,
+            env: opts.getEnv(),
+            timeout,
+            onOutput: onChunk,
+          });
+      // Keep the original command in the UI/result rather than bubblewrap's argv.
+      if (sandbox) session.command = command;
 
       const started = Date.now();
       const onAbort = () => killSession(session);

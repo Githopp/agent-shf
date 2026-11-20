@@ -48,6 +48,7 @@ export class Shell implements InputContext {
   private unmuteScopes = new Set<ShellScope>();
   private pendingEchoSkips = 0;
   private agentActive = false;
+  private queuedCommand: string | null = null;
   private strategy: ShellStrategy;
   private tmpDir?: string;
 
@@ -151,6 +152,11 @@ export class Shell implements InputContext {
     // Allow extensions to inject raw keystrokes into the PTY
     this.bus.on("shell:pty-write", ({ data }) => {
       this.ptyProcess.write(data);
+    });
+
+    // A command suggestion is typed into the shell prompt when the turn ends.
+    this.bus.on("shell:queue-command", ({ command }) => {
+      this.queuedCommand = command.trim() ? command.replace(/\n/g, " ") : null;
     });
 
     // Allow extensions to resize the PTY (sends SIGWINCH to child)
@@ -332,6 +338,15 @@ export class Shell implements InputContext {
     });
 
     this.handlers.define("shell:on-processing-redraw", () => {
+      if (this.queuedCommand) {
+        const command = this.queuedCommand;
+        this.queuedCommand = null;
+        this.inputHandler.cancelPendingReturnMode();
+        // Newline first: it redraws the shell prompt, then the command fills
+        // the line so the user only has to review it and press Enter.
+        this.ptyProcess.write("\n" + command);
+        return;
+      }
       if (!this.inputHandler.handleProcessingDone()) {
         if (this.freshPrompt()) this.skipNextLine();
       }

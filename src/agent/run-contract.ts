@@ -62,6 +62,9 @@ export interface AgentRunOptions {
   /** Treat a model call that sends nothing at all for this long as a transient failure (retried like a cut stream).
    *  An unreachable backend otherwise holds the call until the transport's own long timeout (35-46 min seen). */
   firstByteTimeoutMs?: number;
+  /** Read-only run: hide/refuse file-mutating tools, and run shell commands in an OS
+   *  read-only filesystem sandbox where one is available. */
+  readOnly?: boolean;
 }
 
 /** Named handler agent:run accepts this single object.

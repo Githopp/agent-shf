@@ -47,6 +47,7 @@
             packages = [
               pkgs.nodejs_22
               pkgs.ripgrep
+              pkgs.bubblewrap
             ];
             shellHook = ''
               echo "agent-sh dev shell — node $(node --version), rg $(rg --version | head -1)"

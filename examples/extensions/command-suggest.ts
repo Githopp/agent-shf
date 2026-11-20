@@ -5,6 +5,10 @@
  * finishes and the user drops to the shell prompt with the command pre-typed
  * — no copy-paste, no mode toggle, just review and press Enter.
  *
+ * Read-only agent modes load the same tool automatically (src/extensions/
+ * command-suggest.ts), so this extension is only needed when you want the tool
+ * in every mode.
+ *
  * Usage:
  *   agent-sh -e ./examples/extensions/command-suggest.ts
  *
@@ -18,10 +22,7 @@ export default function activate(ctx: ExtensionContext): void {
 
   // No shell to deliver to (e.g. ashi) — the suggestion would go nowhere.
   if (!ctx.shell) return;
-
-  let pendingCommand: string | null = null;
-
-  // ── Tool ────────────────────────────────────────────────────────
+  if (ctx.agent?.getTools().some((tool) => tool.name === "suggest_command")) return;
 
   ctx.agent?.registerTool({
     name: "suggest_command",
@@ -60,31 +61,16 @@ export default function activate(ctx: ExtensionContext): void {
     async execute(args) {
       const cmd = (args.command as string).trim();
       if (!cmd) {
-        pendingCommand = null;
+        bus.emit("shell:queue-command", { command: "" });
         return { content: "Cleared pending command suggestion.", exitCode: 0, isError: false };
       }
-      // Collapse newlines to spaces so the command stays on one readline buffer.
-      pendingCommand = cmd.replace(/\n/g, " ");
+      const command = cmd.replace(/\n/g, " ");
+      bus.emit("shell:queue-command", { command });
       return {
-        content: `Will suggest at shell prompt: ${pendingCommand}`,
+        content: `Will place at the shell prompt: ${command}`,
         exitCode: 0,
         isError: false,
       };
     },
-  });
-
-  // ── Injection hook ──────────────────────────────────────────────
-
-  // Replace the default handler — which re-enters agent-input mode when sticky —
-  // so a pending command lands at a fresh shell prompt instead. The "\n" leads
-  // the same PTY write so the new prompt appears before the command text fills it.
-  ctx.advise("shell:on-processing-redraw", (next) => {
-    if (pendingCommand) {
-      const cmd = pendingCommand;
-      pendingCommand = null;
-      bus.emit("shell:pty-write", { data: "\n" + cmd });
-    } else {
-      next();
-    }
   });
 }

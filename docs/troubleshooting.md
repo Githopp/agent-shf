@@ -35,6 +35,18 @@ fi
 
 Your normal p10k prompt still works — only the "flash cached prompt then redraw" behavior is disabled.
 
+**Problem**: Launched from fish but the session looks like bash (or vice versa)
+
+**Cause**: `$SHELL` can be stale (common on NixOS, where it stays `/bin/bash` even in a fish session).
+
+**Solution**: agent-sh now prefers the shell it was actually launched from when that is bash, zsh, or fish. Use `--shell /path/to/fish` to override the detection. On NixOS, bash also used to hand itself over to fish from `/etc/bashrc`; agent-sh now suppresses that hand-off while its own bash hooks load.
+
+**Problem**: A read-only agent mode has no shell tools
+
+**Cause**: Read-only shell commands are confined with bubblewrap, and bubblewrap is missing or unprivileged user namespaces are disabled.
+
+**Solution**: Install `bubblewrap` (the Nix package includes it) and verify `bwrap --ro-bind / / --dev /dev --proc /proc --unshare-pid true` succeeds. Without it, read-only modes deliberately hide shell tools and keep only the file-read tools plus `suggest_command`.
+
 ## Common Errors
 
 **Error**: "API key not found" or "401 Unauthorized"
