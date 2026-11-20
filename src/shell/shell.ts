@@ -6,6 +6,7 @@ import { InputHandler, type InputContext } from "./input-handler.js";
 import { OutputParser } from "./output-parser.js";
 import { getSettings } from "../core/settings.js";
 import { clearOpost } from "../utils/tty.js";
+import { findBash } from "../utils/executor.js";
 import { processTerminal, surfaceFromTerminal, type Terminal } from "./terminal.js";
 import { TuiInputView } from "./tui-input-view.js";
 import {
@@ -79,14 +80,15 @@ export class Shell implements InputContext {
     // Prompt theming is left entirely to the user's shell config. Per-shell
     // rc-file generation lives in src/shell/strategies/.
     const matched = pickStrategy(opts.shell);
+    this.strategy = matched ?? FALLBACK_STRATEGY;
+    const fallbackShell = findBash() ?? "/bin/sh";
     if (!matched) {
       console.warn(
         `Warning: agent-sh only supports ${SUPPORTED_SHELL_NAMES.join(", ")}. ` +
-        `"${opts.shell}" may not work correctly — falling back to /bin/bash.`
+        `"${opts.shell}" may not work correctly — falling back to ${fallbackShell}.`
       );
     }
-    this.strategy = matched ?? FALLBACK_STRATEGY;
-    const shellBin = matched ? opts.shell : "/bin/bash";
+    const shellBin = matched ? opts.shell : fallbackShell;
 
     // Per-instance tag so nested agent-sh hooks don't cross-trigger.
     const instanceTag = `id=${opts.instanceId}`;

@@ -14,12 +14,22 @@ function explainSpawnError(err: NodeJS.ErrnoException, cwd: string): string {
 let cachedBashPath: string | null | undefined;
 
 /** Resolve a usable bash binary, or null if none is on PATH.
- *  Unix: `/bin/bash` (canonical, present on every Linux/macOS install).
+ *  Unix: canonical locations first, then a PATH probe (NixOS ships no
+ *  `/bin/bash` — `/bin` holds only `sh`).
  *  Windows: probe via `where bash` so Git Bash users keep working. */
 export function findBash(): string | null {
   if (cachedBashPath !== undefined) return cachedBashPath;
   if (process.platform !== "win32") {
-    cachedBashPath = "/bin/bash";
+    for (const p of ["/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", "/opt/homebrew/bin/bash"]) {
+      if (existsSync(p)) {
+        cachedBashPath = p;
+        return cachedBashPath;
+      }
+    }
+    // Not in a canonical location — resolve from PATH (packaged environments
+    // such as Nix provide bash there).
+    const r = spawnSync("bash", ["-c", ":"], { encoding: "utf-8" });
+    cachedBashPath = r.status === 0 ? "bash" : null;
     return cachedBashPath;
   }
   const r = spawnSync("where", ["bash"], { encoding: "utf-8" });
