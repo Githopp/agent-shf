@@ -232,6 +232,30 @@ function pinHostCore(target: string): void {
   console.log(`agent-sh: --dev — linking ${path.basename(target)} against host core at ${PACKAGE_ROOT}`);
 }
 
+/** Copies may carry the source's modes — a store-backed bundle mount
+ *  (e.g. the Nix package) is world-read-only (0444 files, 0555 dirs).
+ *  cpSync preserves those, and the later steps here — package.json
+ *  rewrites, npm install creating node_modules — fail with EACCES.
+ *  Restore owner write access on the copied tree. */
+function makeTreeWritable(target: string): void {
+  const grant = (p: string): void => {
+    try { fs.chmodSync(p, fs.statSync(p).mode | fs.constants.S_IWUSR); } catch { /* source may already be writable */ }
+  };
+  const stats = fs.statSync(target);
+  if (!stats.isDirectory()) {
+    grant(target); // single-file install
+    return;
+  }
+  const walk = (dir: string): void => {
+    grant(dir);
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (ent.isDirectory()) walk(path.join(dir, ent.name));
+      else if (ent.isFile()) grant(path.join(dir, ent.name));
+    }
+  };
+  walk(target);
+}
+
 function maybeNpmInstall(target: string, pkg: PackageJson): void {
   const deps = { ...(pkg.dependencies ?? {}), ...(pkg.peerDependencies ?? {}) };
   if (Object.keys(deps).length === 0) return;
@@ -324,6 +348,7 @@ export async function runInstall(spec: string, opts: InstallOpts = {}): Promise<
       // existing node_modules, silently leaving the bridge's deps stale.
       filter: (src) => path.basename(src) !== "node_modules",
     });
+    makeTreeWritable(target);
     try {
       rewriteFileDeps(target, resolved.sourcePath);
       if (opts.dev) pinHostCore(target);
@@ -340,6 +365,7 @@ export async function runInstall(spec: string, opts: InstallOpts = {}): Promise<
     }
   } else {
     fs.copyFileSync(resolved.sourcePath, target);
+    makeTreeWritable(target);
   }
 
   console.log(`Installed: ${resolved.name} -> ${target}`);

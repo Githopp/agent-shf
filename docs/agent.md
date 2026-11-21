@@ -35,9 +35,9 @@ Every query draws on two distinct streams of context:
 The two streams don't overlap: agent tool outputs live only in the conversation, and shell context tracks only user-initiated activity. When either stream grows large, ash has escape hatches rather than silent truncation:
 
 - **Long shell outputs** are spilled to tempfiles (`<tmpdir>/agent-sh-<pid>/<id>.out`) at capture time. The LLM sees a head+tail stub with the path and recovers the full output via plain `read_file`.
-- **Older conversation turns** are compacted by the built-in `rolling-history` extension: each is nucleated into a one-line summary in a persistent store (`~/.agent-sh/rolling-history/history.jsonl`), with the full message kept in an ephemeral per-session cache. The `conversation_recall` tool browses, searches, and expands those entries.
+- **Older conversation turns** are **not compacted stock**: the `rolling-history` extension (persistent summary store + `conversation_recall`) ships dormant, and no backend activates it. Hosts that opt in get its three-tier scheme — see [Context Management](context-management.md).
 
-Compaction is pluggable: the `conversation:compact` handler is advisable, so extensions can install richer strategies without changing the recall surface. See [Context Management](context-management.md) for the full design.
+Compaction is pluggable: the stock `conversation:compact` handler ships without a strategy (auto-compact and `/compact` find nothing to do), and extensions can install one via the `conversation:compact` advisor. See [Context Management](context-management.md) for the full design.
 
 ## System Prompt
 
@@ -49,7 +49,7 @@ The system prompt is assembled once per `cwd` and cached (invalidated when the w
 4. **Global memory** — `~/.agent-sh/AGENTS.md`, if present
 5. **Global skills** — discovered global skills (cwd-stable)
 6. **Project conventions + skills** — `CLAUDE.md`/`AGENT.md` walked from cwd to root, plus discovered project skills (cwd-stable; see next section)
-7. **Extension instructions** — blocks registered by extensions via `registerInstruction()` (e.g. proactive recall guidance)
+7. **Extension instructions** — blocks registered by extensions via `registerInstruction()` (e.g. per-extension usage hints)
 8. **Image support** — appended when the active model accepts image input
 
 Built-in tools are not inlined here — they're passed to the provider via the API `tools` parameter. Extensions can advise `system-prompt:build` directly to append further context (instance IDs, memory files, etc.).
@@ -186,7 +186,7 @@ Extensions can add tools that cross the shell↔agent boundary via `shell:exec-r
 | `list_skills` | List available skills (name, description, path) | No |
 | `conversation_recall`\* | Browse/search/expand evicted conversation turns from the rolling-history store | No |
 
-\* `conversation_recall` is not a core tool — it's registered by the built-in `rolling-history` extension, so it's absent under headless/bridge backends. Every other row is a core tool registered by `activateAgent(ctx)`.
+\* `conversation_recall` is not a core tool — it's registered by the `rolling-history` extension, which ships dormant (no backend activates it stock). Every other row is a core tool registered by `activateAgent(ctx)`.
 
 **Common pattern**: all file-based tools resolve relative paths from the current working directory, looked up via the `cwd` handler (`ctx.call("cwd")`). The shell-context built-in advises this with the PTY-tracked cwd; without it, tools fall back to `process.cwd()`.
 
@@ -357,7 +357,7 @@ This array grows with every turn. To prevent context overflow, ash auto-compacts
 
 Before each LLM call, ash estimates the total prompt tokens. If it's over the threshold, it invokes the `conversation:compact` handler to free space, then proceeds. If the API still returns a context-overflow error, ash compacts more aggressively and retries once; if compaction frees nothing, it aborts rather than looping.
 
-The default compaction strategy evicts older turns into the nuclear archive and leaves a bridge note; `conversation_recall` can bring them back on demand. See [Context Management](context-management.md#conversation-compaction) for the three-tier design and how to swap the strategy.
+Stock, no compaction strategy is installed: the handler runs, no advisor answers, and `/compact` reports "nothing to compact" — the live array grows until the provider rejects the oversized request (ash surfaces the overflow instead of retry-looping). The dormant `rolling-history` extension implements the three-tier strategy (persistent summaries, evicted turns recoverable via `conversation_recall`); a host opts in by calling `activateRollingHistory` directly, and extensions install their own by advising `conversation:compact`. See [Context Management](context-management.md#conversation-compaction) for the design.
 
 The user can also trigger compaction manually with `/compact`.
 

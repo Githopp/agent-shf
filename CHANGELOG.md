@@ -21,8 +21,27 @@ Releases before this file are recorded in the git tags and GitHub releases.
 - Commands staged by the agent are typed into the next shell prompt via
   `shell:queue-command`, so a pending input mode is cleared first.
 
+### Changed
+
+- pi-bridge now targets pi SDK 1.x under the `@earendil-works` scope
+  (`@mariozechner/pi-*` is deprecated upstream): `modelRuntime` replaces
+  `modelRegistry` (async `getAvailable`, `getModel(provider, id)`), the
+  runtime gets an explicit `agentDir`, sessions re-bind subscriptions and
+  `bindExtensions()`, mid-run submits queue via `followUp()` instead of
+  failing, and `agent_settled` (not `agent_end`) ends the processing state.
+  Also new: a prebuilt `pi-bridge` package in the Nix flake — the extension
+  ships with resolved `node_modules`, so hosts can symlink it read-only into
+  `~/.agent-sh/extensions/` (the `agent-sh install` path remains for
+  npm-managed hosts).
+- The `rolling-history` built-in is stock-disabled: no backend activates it. The persistent turn store, cross-session history, the `conversation_recall` tool, the `/history` command, and the built-in compaction strategy are inert by default; existing `~/.agent-sh/rolling-history/` files stay untouched on disk. Consequences stock: the auto-compact trigger and `/compact` find no strategy (the live conversation grows to the provider's context limit), and no prior-session history is prefetched at launch. The extension remains for hosts that opt in (see `docs/context-management.md`).
+
 ### Fixed
 
+- `agent-sh install` from a read-only bundle source (notably a Nix-built
+  agent-sh, whose packaged `examples/extensions` are world-read-only) copied
+  the extension with its 0444/0555 store modes; `npm install` then failed with
+  EACCES creating `node_modules`. The installer now restores owner-write on
+  the copied tree.
 - Interactive launches prefer the actual parent shell (bash/zsh/fish) over a
   stale `$SHELL`, so launching from fish no longer starts a bash session on
   systems where `SHELL` still says bash.

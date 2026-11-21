@@ -3,7 +3,7 @@
  * Module-owned built-ins activate inline:
  *   shell-context, tui-renderer → registerShellHandlers (src/shell/)
  *   ash (a specific backend)    → activateAgent         (src/agent/)
- *   rolling-history              → activateRollingHistory (src/cli/)
+ *   rolling-history              → dormant (ships; the CLI does not activate it — see docs/context-management.md)
  *   backend registry             → createCore           (src/core/)
  */
 import type { ExtensionContext } from "../shell/host-types.js";

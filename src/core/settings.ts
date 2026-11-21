@@ -175,7 +175,8 @@ export interface Settings {
   agentModes?: Record<string, AgentModeSetting>;
 
   // ── Built-in extensions ──────────────────────────────────
-  /** Names of built-in extensions to disable (e.g. ["command-suggest"]). */
+  /** Names of loader-managed built-in extensions to disable
+   * (slash-commands, file-autocomplete, codex-provider). */
   disabledBuiltins?: string[];
 
   /**

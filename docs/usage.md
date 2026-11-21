@@ -370,9 +370,9 @@ prompt; they default to the trigger character, `●` (`○` for read-only), and
 | `historySize` | `500` | Max agent query history entries (persisted across sessions) |
 | `shellTruncateThreshold` | `20` | Shell output lines before spill-to-tempfile |
 | `shellHeadLines` / `shellTailLines` | `10` / `10` | Lines kept from start/end when output is spilled |
-| `autoCompactThreshold` | `0.5` | Fraction of the model's context window at which conversation auto-compacts |
-| `historyMaxBytes` | `104857600` | Max size of `~/.agent-sh/history` before front-truncation (100MB) |
-| `historyStartupEntries` | `100` | Prior history entries injected as `[Prior session history]` preamble on launch |
+| `autoCompactThreshold` | `0.5` | Fraction of the model's context window at which the auto-compact trigger fires. Stock there is no compaction strategy to answer it (`rolling-history` ships dormant) — see [Context Management](context-management.md) |
+| `historyMaxBytes` | `104857600` | (Dormant) max size of the rolling-history store before front-truncation — stock, `rolling-history` never activates |
+| `historyStartupEntries` | `100` | (Dormant) prior-session entries injected as a `[Prior session history]` preamble on launch — stock, `rolling-history` never activates |
 | `maxCommandOutputLines` | `3` | Max tool output lines shown inline in TUI |
 | `readOutputMaxLines` | `10` | Max read tool output lines shown inline (0 = hidden) |
 | `diffMaxLines` | `Infinity` | Max diff lines rendered in the TUI. Defaults to no limit |
@@ -383,7 +383,7 @@ prompt; they default to the trigger character, `●` (`○` for read-only), and
 | `agentModes` | `{ ">": {} }` | Activation characters mapped to per-mode provider/model and `readOnly`; see [Agent modes](#agent-modes-different-triggers-different-models). |
 | `toolMode` | `"api"` | How tools are presented to the LLM. `"api"` sends all tool schemas. `"deferred"` bundles extension tools behind a `use_extension(name, args)` meta-tool (saves prompt tokens, loses schema fidelity). `"deferred-lookup"` keeps extension schemas dormant until the model calls `load_tool(names[])` — loaded tools then become first-class on the next turn with full schemas. `"inline"` describes tools as text. |
 | `disabledExtensions` | `[]` | Names of user extensions in `~/.agent-sh/extensions/` to skip when auto-discovering. Match by basename without extension for files (`"peer-mesh"` matches `peer-mesh.ts`) or by directory name for dir-style extensions (`"superash"` matches `superash/index.ts`). Avoids having to rename files to `.disabled`. |
-| `disabledBuiltins` | `[]` | Names of built-in extensions to disable. |
+| `disabledBuiltins` | `[]` | Names of loader-managed built-in extensions to disable (`slash-commands`, `file-autocomplete`, `codex-provider`). Note: `rolling-history` is dormant stock — no backend activates it, so it can't be "disabled" (or enabled) via settings |
 
 ## Startup Banner
 
@@ -414,9 +414,9 @@ This means you can run a failing command, then type `> fix this` and the agent k
 | `/model [name]` | Show current model; with a name, switch to that model |
 | `/backend [name]` | List backends, or switch to a named backend |
 | `/thinking [level]` | Set reasoning effort (off, low, medium, high) |
-| `/compact` | Compact conversation (free up context space) |
+| `/compact` | Fire the compaction handler (a no-op stock — no strategy installed; active only with an installed `conversation:compact` advisor) |
 | `/context` | Show context budget usage (active tokens vs. budget) |
-| `/history [on\|off\|status]` | Pause/resume cross-session history writes for this session (no cache invalidation) |
+| `/history [on\|off\|status]` | Only with an active `rolling-history` strategy: pause/resume cross-session history writes for this session (no cache invalidation). Stock, the command isn't registered |
 | `/reload` | Reload user extensions from `~/.agent-sh/extensions/` |
 
 See [Context Management](context-management.md) for how `/compact` and `/context` work, and [Extensions: Custom Agent Backends](extensions.md#custom-agent-backends) for `/backend`.

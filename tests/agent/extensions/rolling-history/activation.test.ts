@@ -47,6 +47,9 @@ async function bootWithRollingHistory(storeDir: string): Promise<{
 
   activateAgent(ctx);
   await loadBuiltinExtensions(ctx, ["file-autocomplete"]);
+  // The CLI no longer activates rolling-history (stock-disabled); this
+  // harness drives the dormant extension directly, as an embedding host
+  // that opts in would.
   activateRollingHistory(ctx);
   return { core, commands };
 }
@@ -64,7 +67,7 @@ test("bridge boot (no activateRollingHistory) → conversation_recall absent fro
     `bridge boot should not register conversation_recall; got: ${names.join(", ")}`);
 });
 
-test("shell boot (with activateRollingHistory) → conversation_recall registered", async () => {
+test("opt-in host boot (explicitly activates the dormant extension) → conversation_recall registered", async () => {
   const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "rh-act-"));
   try {
     const { core } = await bootWithRollingHistory(tmpDir);
@@ -72,6 +75,32 @@ test("shell boot (with activateRollingHistory) → conversation_recall registere
     const names = tools.map((t) => t.name);
     assert.ok(names.includes("conversation_recall"),
       `shell boot should register conversation_recall; got: ${names.join(", ")}`);
+  } finally {
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("stock shell boot (no activation) → conversation_recall absent from tools", async () => {
+  const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "rh-stock-"));
+  try {
+    const core = createCore({ defaultBackend: "ash" } as AppConfig);
+    const ctx = core.extensionContext({ quit: () => {} });
+    // Pin storage so a regression can't touch the real store dir.
+    (ctx as { getStoragePath: (ns: string) => string }).getStoragePath = () => tmpDir;
+    const commands = new Map<string, CommandReg["handler"]>();
+    core.bus.on("command:register", ({ name, handler }) => { commands.set(name, handler); });
+
+    activateAgent(ctx);
+    await loadBuiltinExtensions(ctx, ["file-autocomplete"]);
+    // Mirrors src/cli/index.ts stock: rolling-history stays dormant.
+
+    const { tools } = core.bus.emitPipe("agent:tools", { tools: [] as ToolDefinition[] });
+    const names = tools.map((t) => t.name);
+    assert.ok(!names.includes("conversation_recall"),
+      `stock boot should not register conversation_recall; got: ${names.join(", ")}`);
+    assert.ok(!commands.has("history"), "stock boot should not register the /history command");
+    assert.ok(!fs.existsSync(path.join(tmpDir, "history.jsonl")),
+      "stock boot should not create the summary store");
   } finally {
     await fsp.rm(tmpDir, { recursive: true, force: true });
   }

@@ -22,6 +22,7 @@
         in
         rec {
           agent-sh = pkgs.callPackage ./nix/agent-sh.nix { src = self; };
+          pi-bridge = pkgs.callPackage ./nix/pi-bridge.nix { src = self; };
           default = agent-sh;
         }
       );

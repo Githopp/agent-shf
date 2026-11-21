@@ -75,7 +75,7 @@ The session directory is removed on process exit (including `SIGINT` / `SIGTERM`
 
 ## Conversation compaction
 
-Unlike shell context — which is a per-query delta and stays small — the conversation grows every turn. Without an active strategy it would eventually blow past the model's window. The kernel owns the *trigger*; the **built-in `rolling-history` extension** owns the *strategy* and the *store*. The result is a three-tier scheme designed to feel like shell history. (Headless or bridge backends that don't load the extension keep the live array and the kernel trigger, but have no summary store, recall, or cross-restart history.)
+Unlike shell context — which is a per-query delta and stays small — the conversation grows every turn. Without an active strategy it would eventually blow past the model's window. The kernel owns the *trigger*; a host owns the *strategy* and the *store*. The **`rolling-history` extension** implements the reference strategy — a three-tier scheme designed to feel like shell history — but **ships dormant**: no backend activates it stock. Stock sessions therefore have no summary store, no recall, no cross-restart history, and no compaction strategy (auto-compact and `/compact` find nothing to do; the live array grows until the provider rejects the oversized request). Hosts that want it import and call `activateRollingHistory` directly; with it active, `/history off` pauses persistence for the session without uninstalling the strategy.
 
 ### Tier 1 — eager capture
 
@@ -141,7 +141,7 @@ There's no dedicated shell-recall tool: the spill file is just a normal file. Th
 
 ### Conversation — `conversation_recall` tool
 
-Registered by the built-in `rolling-history` extension (only present when that extension is active; bridges and embedded uses don't ship it):
+Registered by the `rolling-history` extension (dormant stock — present only when a host explicitly activates it):
 
 - `conversation_recall {"action": "browse"}` — list the 25 most recent summary entries from the store
 - `conversation_recall {"action": "search", "query": "..."}` — regex search across stored entries (one-line summaries plus the ephemeral full-body cache), returning each hit's header and a first-match excerpt
@@ -166,7 +166,7 @@ Common override patterns: LLM-summarized compaction (summarize evicted turns bef
 | `/context` | Show context budget usage (active tokens, total tokens, budget) |
 | `/history [on\|off\|status]` | Pause/resume writes to the rolling-history store for this session. Recall stays available; the tool and instruction stay registered, so toggling doesn't perturb the tools array or system prompt (LLM prompt cache is preserved). |
 
-There's no `/clear` — history is continuous by design.
+There's no `/clear` — history is continuous by design. Both `/history` and the `/compact` behavior above only exist with an active strategy; stock (extension dormant) they report nothing to do.
 
 ## Configuration
 

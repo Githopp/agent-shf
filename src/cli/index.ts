@@ -3,7 +3,6 @@ import { activateShell, registerShellHandlers, type ShellHandle } from "../shell
 import { activateAgent } from "../agent/index.js";
 import { createCore } from "../core/index.js";
 import { palette as p } from "../utils/palette.js";
-import activateRollingHistory from "../agent/extensions/rolling-history/index.js";
 import { getSettings } from "../core/settings.js";
 import { dispatchSubcommand } from "./subcommands.js";
 import { anyProviderConfigured, KNOWN_PROVIDERS } from "./auth/keys.js";
@@ -191,7 +190,10 @@ async function main(): Promise<void> {
   }
 
   await core.activateBackend(config.backend);
-  activateRollingHistory(extCtx);
+  // Note: the rolling-history built-in (persistent turn store,
+  // conversation_recall, compaction strategy) ships dormant — this CLI
+  // deliberately does not activate it. See docs/context-management.md
+  // before wiring it back in.
 
   // 100ms sidesteps macOS SIGTTOU during fg-pgrp handoff.
   await new Promise(resolve => setTimeout(resolve, 100));
